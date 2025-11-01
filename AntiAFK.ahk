@@ -16,6 +16,11 @@ minHold := 80              ; minimum ms key hold
 maxHold := 600             ; maximum ms key hold
 keys := ["w","a","s","d"]  ; possible keys
 chanceToAct := 1.0         ; 0..1 chance to perform an action when timer fires
+; Mouse wiggle options (more natural non-key actions)
+enableMouseWiggle := true  ; enable mouse wiggle as a possible action
+mouseWiggleChance := 0.4   ; when an action occurs, chance it's a mouse wiggle (0..1)
+mouseWiggleMaxPixels := 8  ; maximum pixels to move in X/Y during wiggle
+mouseWiggleDuration := 80  ; total ms for the wiggle (split across steps)
 
 ; Internal
 global Running := false
@@ -32,6 +37,26 @@ randFloat(min := 0.0, max := 1.0) {
 ; Return an integer between min and max (inclusive).
 randInt(min, max) {
     return min + Floor(randFloat(0, 1) * (max - min + 1))
+}
+
+; Move the mouse slightly and return to original position (or near it) to
+; simulate a natural 'wiggle'. The wiggle is split into small steps.
+MouseWiggle(*) {
+    global mouseWiggleMaxPixels, mouseWiggleDuration
+    if (mouseWiggleMaxPixels <= 0)
+        return
+    ; save current pos
+    MouseGetPos &startX, &startY
+    steps := 3
+    stepDelay := Max(10, Floor(mouseWiggleDuration / steps))
+    loop steps {
+        dx := randInt(-mouseWiggleMaxPixels, mouseWiggleMaxPixels)
+        dy := randInt(-mouseWiggleMaxPixels, mouseWiggleMaxPixels)
+        MouseMove(startX + dx, startY + dy, 0)
+        Sleep stepDelay
+    }
+    ; return close to start (small random offset)
+    MouseMove(startX + randInt(-2, 2), startY + randInt(-2, 2), 0)
 }
 
 ; Validate config and clamp sensible values.
@@ -51,6 +76,18 @@ ValidateConfig(*) {
         chanceToAct := 1
     if (!IsObject(keys) || keys.Length == 0)
         keys := ["w","a","s","d"]
+    ; mouse wiggle config validation
+    global enableMouseWiggle, mouseWiggleChance, mouseWiggleMaxPixels, mouseWiggleDuration
+    if (enableMouseWiggle != true && enableMouseWiggle != false)
+        enableMouseWiggle := true
+    if (mouseWiggleChance < 0)
+        mouseWiggleChance := 0
+    if (mouseWiggleChance > 1)
+        mouseWiggleChance := 1
+    if (mouseWiggleMaxPixels < 0)
+        mouseWiggleMaxPixels := 0
+    if (mouseWiggleDuration < 10)
+        mouseWiggleDuration := 10
 }
 
 ; bind hotkey
@@ -88,12 +125,18 @@ AFKAction(*) {
         ScheduleNext()
         return
     }
-    key := keys[ randInt(1, keys.Length) ]
-    hold := randInt(minHold, maxHold)
-    ; send keypress
-    Send("{" . key . " down}")
-    Sleep hold
-    Send("{" . key . " up}")
+    ; decide whether to wiggle mouse or press a key
+    global enableMouseWiggle, mouseWiggleChance
+    if (enableMouseWiggle && randFloat(0, 1) < mouseWiggleChance) {
+        MouseWiggle()
+    } else {
+        key := keys[ randInt(1, keys.Length) ]
+        hold := randInt(minHold, maxHold)
+        ; send keypress
+        Send("{" . key . " down}")
+        Sleep hold
+        Send("{" . key . " up}")
+    }
     ScheduleNext()
 }
 
